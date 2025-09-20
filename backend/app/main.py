@@ -12,6 +12,7 @@ from app.routers.preferences import router as preferences_router
 from app.routers.internship_details import router as internship_details_router
 from app.routers.dashboard_company import router as dashboard_company_router
 from app.routers.allocation_router import router as allocation_router
+from app.routers.logs import router as logs_router
 # Register routers (add this line)
 app = FastAPI(title="PM Internship Allocation API", version="1.0")
 
@@ -34,4 +35,5 @@ app.include_router(search_router)
 app.include_router(preferences_router)
 app.include_router(internship_details_router)
 app.include_router(dashboard_company_router)  
-app.include_router(allocation_router)  
+app.include_router(allocation_router)
+app.include_router(logs_router)  

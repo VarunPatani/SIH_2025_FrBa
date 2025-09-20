@@ -8,15 +8,9 @@ from sqlalchemy import text
 # Load environment variables
 load_dotenv()
 
-DB_USER = os.getenv("DB_USER")
-DB_PASS = os.getenv("DB_PASS")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
+# Get database URL from environment, fallback to SQLite for development
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() == "true"
-
-# Async PostgreSQL URL
-DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Engine
 engine = create_async_engine(DATABASE_URL, echo=SQL_ECHO, pool_pre_ping=True, future=True)

@@ -9,3 +9,4 @@ scipy          # for Hungarian algorithm
 python-multipart  # for file uploads
 python-dotenv
 pydantic[email]
+greenlet

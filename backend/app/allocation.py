@@ -231,7 +231,7 @@ async def run_allocation(
                 INSERT INTO match_result
                   (run_id, student_id, internship_id, final_score, component_json)
                 VALUES
-                  (:run_id, :student_id, :internship_id, :final_score, :component_json::jsonb)
+                  (:run_id, :student_id, :internship_id, :final_score, :component_json)
             """), row)
 
     await db.commit()

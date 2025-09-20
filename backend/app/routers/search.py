@@ -11,7 +11,7 @@ router = APIRouter(prefix="/search", tags=["search"])
 class InternshipResult(BaseModel):
     internship_id: int
     title: str
-    org_name: str
+    org_name: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
     min_cgpa: Optional[float] = None
