@@ -23,13 +23,13 @@ async def create_internship(
     """Create a new internship"""
     query = text("""
         INSERT INTO internship (
-            org_id, title, description, req_skills_text, min_cgpa, 
+            org_id, org_name ,title, description, req_skills_text, min_cgpa, 
             location, pincode, capacity, job_role_code, nsqf_required_level,
             min_age, genders_allowed, languages_required_json, is_shift_night,
             wage_min, wage_max, category_quota_json, is_active
         )
         VALUES (
-            :org_id, :title, :description, :req_skills_text, :min_cgpa,
+            :org_id, :org_name, :title, :description, :req_skills_text, :min_cgpa,
             :location, :pincode, :capacity, :job_role_code, :nsqf_required_level,
             :min_age, :genders_allowed, :languages_required_json, :is_shift_night,
             :wage_min, :wage_max, :category_quota_json, :is_active
@@ -40,6 +40,7 @@ async def create_internship(
     try:
         result = await db.execute(query, {
             "org_id": internship["org_id"],
+            "org_name": internship["org_name"],
             "title": internship["title"],
             "description": internship["description"],
             "req_skills_text": internship["req_skills_text"],

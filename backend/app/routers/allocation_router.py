@@ -119,20 +119,44 @@ async def get_run_results(run_id: int, db: AsyncSession = Depends(get_db)):
     """Get the results of a specific allocation run"""
     # First check if run exists
     run_query = text("""
-        SELECT run_id, status, created_at
+        SELECT run_id, status, created_at, params_json
         FROM alloc_run
         WHERE run_id = :run_id
     """)
     
     result = await db.execute(run_query, {"run_id": run_id})
-    run = result.mappings().first()
+    run_data = result.mappings().first()
     
-    if not run:
+    if not run_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Allocation run not found"
         )
     
+    # Process the run data to extract weight information
+    run = dict(run_data)
+    
+    # Parse the params_json if it exists
+    params = {}
+    if run.get('params_json'):
+        if isinstance(run['params_json'], str):
+            try:
+                import json
+                params = json.loads(run['params_json'])
+            except:
+                params = {}
+        else:
+            params = run['params_json']
+    
+    # Extract weight values
+    weights = params.get('weights', {})
+    run['skill_weight'] = weights.get('skill', 0.65)
+    run['location_weight'] = weights.get('location', 0.20)
+    run['cgpa_weight'] = weights.get('cgpa', 0.15)
+    run['algorithm'] = params.get('algorithm', 'greedy')
+    run['respect_existing'] = params.get('respect_existing', True)
+    
+    # Rest of the function remains the same...
     # Get match results
     matches_query = text("""
         SELECT 
@@ -140,10 +164,12 @@ async def get_run_results(run_id: int, db: AsyncSession = Depends(get_db)):
             mr.student_id,
             s.name as student_name,
             s.email as student_email,
+            s.cgpa as student_cgpa,
             mr.internship_id,
             i.title as internship_title,
+            i.location,
             o.org_name as company_name,
-            mr.final_score,
+            mr.final_score as score,
             mr.component_json
         FROM match_result mr
         JOIN student s ON mr.student_id = s.student_id
@@ -166,16 +192,15 @@ async def get_run_results(run_id: int, db: AsyncSession = Depends(get_db)):
         FROM match_result
         WHERE run_id = :run_id
     """)
-    
+
     result = await db.execute(stats_query, {"run_id": run_id})
     stats = dict(result.mappings().first())
     
     return {
-        "run": dict(run),
+        "run": run,
         "stats": stats,
         "matches": matches
     }
-
 
 # Add this endpoint to the allocation router
 

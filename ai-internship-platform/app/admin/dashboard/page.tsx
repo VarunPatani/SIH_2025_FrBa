@@ -19,7 +19,7 @@ import { Pagination } from "@/components/ui/pagination"
 import { PortalNav } from "@/components/navigation/portal-nav"
 import { 
   Settings, Play, Eye, Activity, Clock, CheckCircle, XCircle, 
-  Loader2, AlertTriangle, HourglassClock 
+  Loader2, AlertTriangle, Hourglass as HourglassIcon 
 } from "lucide-react"
 import { runAllocation, latestRun, getAllocationRuns, runResults } from "@/app/api"
 import { toast } from "sonner"
@@ -55,7 +55,12 @@ export default function AdminDashboardPage() {
     { label: "Successful Matches", value: "0", icon: "🎯" },
     { label: "System Uptime", value: "99.9%", icon: "⚡" },
   ])
+  // Add this function after your other handler functions before the return statement
 
+  const handleViewResults = (runId) => {
+    // Navigate to the run results page
+    window.location.href = `/admin/runs/${runId}`;
+  }
   const getStatusColor = (status) => {
     switch (status) {
       case "SUCCESS":
@@ -80,7 +85,7 @@ export default function AdminDashboardPage() {
       case "RUNNING":
         return <Activity className="h-4 w-4 animate-pulse" />
       case "QUEUED":
-        return <HourglassClock className="h-4 w-4" />
+        return <HourglassIcon className="h-4 w-4" />
       default:
         return <AlertTriangle className="h-4 w-4" />
     }
@@ -134,7 +139,7 @@ export default function AdminDashboardPage() {
       const data = await getAllocationRuns(runsPerPage, offset);
       
       if (!data || !data.runs) {
-        toast.error("Failed to fetch allocation runs");
+        console.log("Failed to fetch allocation runs");
         return;
       }
       
@@ -143,10 +148,13 @@ export default function AdminDashboardPage() {
       
       // Transform the database runs to match our UI format
       const formattedRuns = data.runs.map(run => {
-        // Parse JSON fields
-        const paramsJson = run.params_json ? JSON.parse(run.params_json) : {};
-        const metricsJson = run.metrics_json ? JSON.parse(run.metrics_json) : {};
-        
+        // Parse JSON fields only if they are strings
+        const paramsJson = typeof run.params_json === 'string' 
+          ? JSON.parse(run.params_json) 
+          : run.params_json || {};
+        const metricsJson = typeof run.metrics_json === 'string' 
+          ? JSON.parse(run.metrics_json) 
+          : run.metrics_json || {};
         return {
           id: `RUN_${run.run_id}`,
           rawId: run.run_id,
@@ -408,6 +416,7 @@ export default function AdminDashboardPage() {
                               variant="outline" 
                               size="sm" 
                               disabled={run.status !== "SUCCESS"}
+                              onClick={() => handleViewResults(run.rawId)} // Add this onClick handler
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               Results

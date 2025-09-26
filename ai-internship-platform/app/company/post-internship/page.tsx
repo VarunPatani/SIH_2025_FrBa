@@ -63,13 +63,11 @@ export default function PostInternshipPage() {
   const [companyData, setCompanyData] = useState(null);
 
   useEffect(() => {
-    // Check if user is logged in
     const user = localStorage.getItem("companyUser")
     if (!user) {
       router.push("/company/login")
       return
     }
-
     const companyUser = JSON.parse(user)
     setCompanyData(companyUser)
   }, [router]);
@@ -206,6 +204,7 @@ export default function PostInternshipPage() {
       
       const internshipData = {
         org_id: companyData.id,
+        org_name: companyData.name,
         title: formData.title,
         description: formData.description,
         req_skills_text: skillsText,
@@ -254,6 +253,7 @@ export default function PostInternshipPage() {
       
       const internshipData = {
         org_id: companyData.id,
+        org_name: companyData.name,
         title: formData.title,
         description: formData.description,
         req_skills_text: skillsText,

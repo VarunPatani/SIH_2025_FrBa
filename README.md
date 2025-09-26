@@ -224,7 +224,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support and queries, please contact:
 - Email: your-email@example.com
-- GitHub Issues: [Create an issue](https://github.com/YOUR_USERNAME/SIH_2025_FB/issues)
+- GitHub Issues: [Create an issue](https://github.com/VarunPatani/SIH_2025_FB/issues)
 
 ---
 
