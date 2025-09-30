@@ -1,0 +1,106 @@
+{
+  "character_similarity_threshold": 0.3,
+  "city_state_boost": 0.3,
+  "regional_boost": 0.2,
+  "city_state_pairs": [
+    ["mumbai", "maharashtra"],
+    ["delhi", "delhi"],
+    ["bangalore", "karnataka"],
+    ["chennai", "tamil nadu"],
+    ["hyderabad", "telangana"],
+    ["pune", "maharashtra"],
+    ["kolkata", "west bengal"],
+    ["ahmedabad", "gujarat"],
+    ["jaipur", "rajasthan"],
+    ["lucknow", "uttar pradesh"],
+    ["kanpur", "uttar pradesh"],
+    ["nagpur", "maharashtra"],
+    ["indore", "madhya pradesh"],
+    ["bhopal", "madhya pradesh"],
+    ["visakhapatnam", "andhra pradesh"],
+    ["patna", "bihar"],
+    ["vadodara", "gujarat"],
+    ["ludhiana", "punjab"],
+    ["agra", "uttar pradesh"],
+    ["nashik", "maharashtra"],
+    ["faridabad", "haryana"],
+    ["meerut", "uttar pradesh"],
+    ["rajkot", "gujarat"],
+    ["kalyan", "maharashtra"],
+    ["vasai", "maharashtra"],
+    ["varanasi", "uttar pradesh"],
+    ["srinagar", "jammu and kashmir"],
+    ["aurangabad", "maharashtra"],
+    ["noida", "uttar pradesh"],
+    ["solapur", "maharashtra"]
+  ],
+  "regions": {
+    "north": ["delhi", "punjab", "haryana", "himachal pradesh", "jammu and kashmir", "uttarakhand", "uttar pradesh"],
+    "south": ["karnataka", "tamil nadu", "kerala", "andhra pradesh", "telangana"],
+    "east": ["west bengal", "odisha", "bihar", "jharkhand", "assam"],
+    "west": ["maharashtra", "gujarat", "rajasthan", "goa"],
+    "central": ["madhya pradesh", "chhattisgarh"]
+  },
+  "performance_levels": {
+    "excellent": {
+      "range": [8.5, 10.0],
+      "score": 1.0
+    },
+    "very_good": {
+      "range": [7.5, 8.5],
+      "score": 0.8
+    },
+    "good": {
+      "range": [6.5, 7.5],
+      "score": 0.6
+    },
+    "satisfactory": {
+      "range": [6.0, 6.5],
+      "score": 0.4
+    },
+    "minimum": {
+      "range": [0.0, 6.0],
+      "score": 0.2
+    }
+  },
+  "cgpa_bonus_thresholds": {
+    "high_bonus": {
+      "threshold": 1.0,
+      "multiplier": 0.1,
+      "max_bonus": 0.2
+    },
+    "low_bonus": {
+      "threshold": 0.5,
+      "multiplier": 0.15,
+      "max_bonus": 0.1
+    }
+  },
+  "competitiveness_levels": {
+    "highly_competitive": {
+      "threshold": 8.0,
+      "factor": 1.1
+    },
+    "moderately_competitive": {
+      "threshold": 7.0,
+      "factor": 1.05
+    },
+    "standard": {
+      "threshold": 6.0,
+      "factor": 1.0
+    },
+    "low_requirement": {
+      "threshold": 0.0,
+      "factor": 0.95
+    }
+  },
+  "default_weights": {
+    "skill_weight": 0.65,
+    "location_weight": 0.20,
+    "cgpa_weight": 0.15
+  },
+  "cgpa_normalization_range": {
+    "min": 6.0,
+    "max": 9.5
+  },
+  "glove_file_path": "glove.6B.200d.txt"
+}
