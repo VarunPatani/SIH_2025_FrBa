@@ -3,6 +3,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, bindparam
 import math, json
+import numpy as np
+from scipy.optimize import linear_sum_assignment
 from typing import List, Optional
 from collections import defaultdict
 
@@ -37,42 +39,62 @@ async def run_allocation(
     cgpa_weight: float = 0.15,
 ):
     """
-    Incremental allocation:
+    Incremental allocation using Hungarian method for optimal assignment:
       - If respect_existing=True: freeze last successful run's matches, reduce internship capacity.
       - If scope_emails provided: only consider those students for new allocation.
     Returns: run_id
     """
 
     # 1. Latest successful run
-    latest_run_id = (await db.execute(text("""
+    latest_run_id = (
+        await db.execute(
+            text("""
         SELECT run_id FROM alloc_run
         WHERE status='SUCCESS'
         ORDER BY created_at DESC
         LIMIT 1
-    """))).scalar()
+    """)
+        )
+    ).scalar()
 
     # 2. Freeze existing placements
     frozen_students = set()
     used_by_internship = defaultdict(int)
 
-    rows = (await db.execute(text("""
+    rows = (
+        (
+            await db.execute(
+                text("""
         SELECT mr.student_id, mr.internship_id
         FROM match_result mr
         JOIN alloc_run ar ON ar.run_id = mr.run_id
         WHERE ar.status = 'SUCCESS'
-    """))).mappings().all()
+    """)
+            )
+        )
+        .mappings()
+        .all()
+    )
 
     for r in rows:
         frozen_students.add(int(r["student_id"]))
         used_by_internship[int(r["internship_id"])] += 1
 
     # 3. Load internships and remaining capacity
-    jobs = (await db.execute(text("""
+    jobs = (
+        (
+            await db.execute(
+                text("""
         SELECT i.internship_id, i.title, i.location, i.pincode, i.capacity,
                i.req_skills_text, i.min_cgpa
         FROM internship i
         WHERE i.is_active = true
-    """))).mappings().all()
+    """)
+            )
+        )
+        .mappings()
+        .all()
+    )
 
     job_info = {}
     for j in jobs:
@@ -100,18 +122,23 @@ async def run_allocation(
         where.append("s.email IN :emails")
         params["emails"] = tuple(scope_emails)
 
-    if frozen_students:
+    if frozen_students and respect_existing:
         where.append("s.student_id NOT IN :frozen")
         params["frozen"] = tuple(frozen_students)
 
     # short-circuit if scope provided but ended up empty
     if ("emails" in params) and not params["emails"]:
-        rid = (await db.execute(text("""
+        rid = (
+            await db.execute(
+                text("""
             INSERT INTO alloc_run (status, params_json, metrics_json)
             VALUES ('SUCCESS',
-                    JSON_OBJECT('respect_existing', :re, 'scoped', 1, 'note','empty scope'),
+                    JSON_OBJECT('respect_existing', :re, 'scoped', 1, 'note','empty scope', 'algorithm', 'hungarian'),
                     NULL)
-        """), {"re": 1 if respect_existing else 0})).lastrowid
+        """),
+                {"re": 1 if respect_existing else 0},
+            )
+        ).lastrowid
         await db.commit()
         return int(rid)
 
@@ -130,109 +157,201 @@ async def run_allocation(
     students = (await db.execute(sel, params)).mappings().all()
 
     if not students:
-        rid = (await db.execute(text("""
+        rid = (
+            await db.execute(
+                text("""
             INSERT INTO alloc_run (status, params_json, metrics_json)
             VALUES ('SUCCESS',
-                    JSON_OBJECT('respect_existing', :re, 'scoped', :sc),
+                    JSON_OBJECT('respect_existing', :re, 'scoped', :sc, 'algorithm', 'hungarian'),
                     JSON_OBJECT('note','no eligible students in scope'))
-        """), {"re": 1 if respect_existing else 0, "sc": 1 if bool(scope_emails) else 0})).lastrowid
+        """),
+                {
+                    "re": 1 if respect_existing else 0,
+                    "sc": 1 if bool(scope_emails) else 0,
+                },
+            )
+        ).lastrowid
         await db.commit()
         return int(rid)
 
-    # 6. Filter open jobs
+    # 6. Filter open jobs and create job slots
     open_jobs = [jid for jid, info in job_info.items() if info["remaining"] > 0]
     if not open_jobs:
-        rid = (await db.execute(text("""
+        rid = (
+            await db.execute(
+                text("""
             INSERT INTO alloc_run (status, params_json, metrics_json)
             VALUES ('SUCCESS',
-                    JSON_OBJECT('respect_existing', :re, 'scoped', :sc),
+                    JSON_OBJECT('respect_existing', :re, 'scoped', :sc, 'algorithm', 'hungarian'),
                     JSON_OBJECT('note','no open capacity'))
-        """), {"re": 1 if respect_existing else 0, "sc": 1 if bool(scope_emails) else 0})).lastrowid
+        """),
+                {
+                    "re": 1 if respect_existing else 0,
+                    "sc": 1 if bool(scope_emails) else 0,
+                },
+            )
+        ).lastrowid
         await db.commit()
         return int(rid)
 
-    # 7. Score student-job pairs
-    pairs = []
-    for s in students:
-        for jid in open_jobs:
-            j = job_info[jid]
-            if j["remaining"] <= 0:
-                continue
-            # eligibility check
-            cg_ok = (s["cgpa"] is None) or (float(s["cgpa"]) >= j["min_cgpa"])
-            if not cg_ok:
-                continue
+    # Create job slots (expand each job into multiple slots based on capacity)
+    job_slots = []  # (job_id, slot_index)
+    for jid in open_jobs:
+        remaining = job_info[jid]["remaining"]
+        for slot in range(remaining):
+            job_slots.append((jid, slot))
 
-            sem = jaccard(s["skills_text"] or "", j["req_skills_text"])
-            cg = norm(float(s["cgpa"]) if s["cgpa"] is not None else 0.0, 6.0, 9.5) if j["min_cgpa"] > 0 else 0.0
-            loc = 1.0 if (s["location_pref"] and j["location"] and s["location_pref"].lower() == j["location"].lower()) else 0.0
+    # 7. Build cost matrix for Hungarian algorithm
+    S = len(students)  # Number of students
+    J = len(job_slots)  # Number of job slots
+
+    # Create a matrix of the right size for the Hungarian algorithm
+    # If more students than jobs, we add dummy jobs
+    # If more jobs than students, we add dummy students
+    padded_size = max(S, J)
+    score_matrix = np.zeros((padded_size, padded_size))
+
+    # Fill the matrix with scores (only the real student-job pairs)
+    for i, student in enumerate(students):
+        for j, (jid, _) in enumerate(job_slots):
+            job = job_info[jid]
+
+            # eligibility check
+            cg_ok = (student["cgpa"] is None) or (
+                float(student["cgpa"]) >= job["min_cgpa"]
+            )
+            if not cg_ok:
+                continue  # Leave as 0 (not eligible)
+
+            sem = jaccard(student["skills_text"] or "", job["req_skills_text"])
+            cg = (
+                norm(
+                    float(student["cgpa"] if student["cgpa"] is not None else 0.0),
+                    6.0,
+                    9.5,
+                )
+                if job["min_cgpa"] > 0
+                else 0.0
+            )
+            loc = (
+                1.0
+                if (
+                    student["location_pref"]
+                    and job["location"]
+                    and student["location_pref"].lower() == job["location"].lower()
+                )
+                else 0.0
+            )
 
             score = skill_weight * sem + location_weight * loc + cgpa_weight * cg
-            if score <= 0:
-                continue
+            score_matrix[i, j] = score
 
-            pairs.append((score, int(s["student_id"]), int(jid), {
-                "semantic": round(sem, 4),
-                "location": loc,
-                "cgpa_norm": round(cg, 4),
-                "weights": {"sem": 0.65, "loc": 0.20, "cg": 0.15}
-            }))
+    # Convert to cost matrix (Hungarian algorithm minimizes costs)
+    max_score = (
+        np.max(score_matrix)
+        if score_matrix.size > 0 and np.max(score_matrix) > 0
+        else 1.0
+    )
+    cost_matrix = max_score - score_matrix
 
-    pairs.sort(reverse=True, key=lambda x: x[0])
+    # Run the Hungarian algorithm
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
-    # 8. Greedy allocation
+    # 8. Extract matches from Hungarian results
     assigned = {}
-    remaining = {jid: job_info[jid]["remaining"] for jid in open_jobs}
-
-    for score, sid, jid, comp in pairs:
-        if sid in assigned:
+    for i, j in zip(row_ind, col_ind):
+        # Skip dummy assignments or invalid indices
+        if i >= S or j >= J:
             continue
-        if remaining.get(jid, 0) <= 0:
-            continue
-        assigned[sid] = (jid, score, comp)
-        remaining[jid] -= 1
 
-    # 9. Record run + matches
-    params_json = json.dumps({
-        'respect_existing': 1 if respect_existing else 0,
-        'scoped': 1 if bool(scope_emails) else 0, 
-        'frozen_count': len(frozen_students),
-        'weights': {
-            'skill': skill_weight,
-            'location': location_weight,
-            'cgpa': cgpa_weight
-        },
-        'algorithm': 'greedy'
-    })
-    
-    result = await db.execute(text("""
+        # Skip assignments with zero or negative score
+        score = score_matrix[i, j]
+        if score <= 0:
+            continue
+
+        sid = int(students[i]["student_id"])
+        jid = job_slots[j][0]  # Get the actual job ID from the slot
+
+        student = students[i]
+        job = job_info[jid]
+
+        # Calculate components for record keeping (same as before)
+        sem = jaccard(student["skills_text"] or "", job["req_skills_text"])
+        cg = (
+            norm(
+                float(student["cgpa"] if student["cgpa"] is not None else 0.0), 6.0, 9.5
+            )
+            if job["min_cgpa"] > 0
+            else 0.0
+        )
+        loc = (
+            1.0
+            if (
+                student["location_pref"]
+                and job["location"]
+                and student["location_pref"].lower() == job["location"].lower()
+            )
+            else 0.0
+        )
+
+        comp = {
+            "semantic": round(sem, 4),
+            "location": loc,
+            "cgpa_norm": round(cg, 4),
+            "weights": {"sem": skill_weight, "loc": location_weight, "cg": cgpa_weight},
+        }
+
+        assigned[sid] = (jid, float(score), comp)
+
+    # 9. Record run + matches (same DB operations as before)
+    params_json = json.dumps(
+        {
+            "respect_existing": 1 if respect_existing else 0,
+            "scoped": 1 if bool(scope_emails) else 0,
+            "frozen_count": len(frozen_students),
+            "weights": {
+                "skill": skill_weight,
+                "location": location_weight,
+                "cgpa": cgpa_weight,
+            },
+            "algorithm": "hungarian",
+        }
+    )
+
+    result = await db.execute(
+        text("""
         INSERT INTO alloc_run (status, params_json, metrics_json)
         VALUES ('SUCCESS', :params_json, NULL)
         RETURNING run_id
-    """), {
-        "params_json": params_json
-    })
-    
+    """),
+        {"params_json": params_json},
+    )
+
     rid = result.scalar_one()
     if assigned:
         rows = []
         for sid, (jid, score, comp) in assigned.items():
-            rows.append({
-                "run_id": int(rid),
-                "student_id": sid,
-                "internship_id": jid,
-                "final_score": float(round(score, 4)),
-                "component_json": json.dumps(comp),
-            })
-        
+            rows.append(
+                {
+                    "run_id": int(rid),
+                    "student_id": sid,
+                    "internship_id": jid,
+                    "final_score": float(round(score, 4)),
+                    "component_json": json.dumps(comp),
+                }
+            )
+
         # Execute the inserts one by one to avoid issues with bulk insert
         for row in rows:
-            await db.execute(text("""
+            await db.execute(
+                text("""
                 INSERT INTO match_result
                   (run_id, student_id, internship_id, final_score, component_json)
                 VALUES
                   (:run_id, :student_id, :internship_id, :final_score, :component_json)
-            """), row)
+            """),
+                row,
+            )
 
     await db.commit()
     return int(rid)
