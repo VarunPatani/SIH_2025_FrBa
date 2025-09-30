@@ -21,8 +21,9 @@ import {
   Settings, Play, Eye, Activity, Clock, CheckCircle, XCircle, 
   Loader2, AlertTriangle, Hourglass as HourglassIcon 
 } from "lucide-react"
-import { runAllocation, latestRun, getAllocationRuns, runResults } from "@/app/api"
+import { runAllocation, latestRun, getAllocationRuns, runResults, runNlpAllocation, runEnsembleAllocation } from "@/app/api"
 import { toast } from "sonner"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function AdminDashboardPage() {
   const adminName = "System Admin"
@@ -31,7 +32,7 @@ export default function AdminDashboardPage() {
   const [totalRuns, setTotalRuns] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const runsPerPage = 10
-  
+  const [allocationMethod, setAllocationMethod] = useState("hungarian")
   // Use an empty array as initial state
   const [matchingRuns, setMatchingRuns] = useState([])
 
@@ -55,12 +56,13 @@ export default function AdminDashboardPage() {
     { label: "Successful Matches", value: "0", icon: "🎯" },
     { label: "System Uptime", value: "99.9%", icon: "⚡" },
   ])
+  
   // Add this function after your other handler functions before the return statement
-
   const handleViewResults = (runId) => {
     // Navigate to the run results page
     window.location.href = `/admin/runs/${runId}`;
   }
+  
   const getStatusColor = (status) => {
     switch (status) {
       case "SUCCESS":
@@ -92,41 +94,87 @@ export default function AdminDashboardPage() {
   }
 
   const handleExecuteMatching = async () => {
-    try {
-      setLoading(true);
-      
-      // Convert slider values to actual weights
-      // Normalize them to sum to 1.0
-      const skillWeight = matchingConfig.skillWeightMultiplier[0] / 10;
-      const locationWeight = matchingConfig.locationPreferenceFactor[0] / 10;
-      const cgpaWeight = matchingConfig.cgpaWeight[0] / 10;
-      
-      // Normalize to ensure they sum to 1.0
-      const totalWeight = skillWeight + locationWeight + cgpaWeight;
-      const normalizedSkillWeight = skillWeight / totalWeight;
-      const normalizedLocationWeight = locationWeight / totalWeight;
-      const normalizedCgpaWeight = cgpaWeight / totalWeight;
-      
-      const response = await runAllocation({
-        skill_weight: normalizedSkillWeight,
-        location_weight: normalizedLocationWeight, 
-        cgpa_weight: normalizedCgpaWeight,
-        respect_existing: true,
-      });
-      
-      toast.success(`Matching process complete! ${response.match_count} matches generated.`);
-      
-      // Fetch the latest run data to update the UI
-      fetchMatchingRuns();
-      
-    } catch (error) {
-      console.error("Error executing matching process:", error);
-      toast.error("Failed to complete matching process. Please try again.");
-    } finally {
-      setIsConfigModalOpen(false);
-      setLoading(false);
+  try {
+    setLoading(true);
+    
+    // Convert slider values to actual weights
+    // Normalize them to sum to 1.0
+    const skillWeight = matchingConfig.skillWeightMultiplier[0] / 10;
+    const locationWeight = matchingConfig.locationPreferenceFactor[0] / 10;
+    const cgpaWeight = matchingConfig.cgpaWeight[0] / 10;
+    
+    // Normalize to ensure they sum to 1.0
+    const totalWeight = skillWeight + locationWeight + cgpaWeight;
+    const normalizedSkillWeight = skillWeight / totalWeight;
+    const normalizedLocationWeight = locationWeight / totalWeight;
+    const normalizedCgpaWeight = cgpaWeight / totalWeight;
+    
+    // Common parameters
+    const commonParams = {
+      skill_weight: normalizedSkillWeight,
+      location_weight: normalizedLocationWeight, 
+      cgpa_weight: normalizedCgpaWeight,
+      respect_existing: true,
+    };
+
+    let result;
+    
+    // Call the appropriate API based on selected method
+    switch (allocationMethod) {
+      case "nlp":
+        result = await runNlpAllocation(commonParams);
+        break;
+        
+      case "ensemble":
+        result = await runEnsembleAllocation(commonParams);
+        break;
+        
+      case "hungarian":
+      default:
+        result = await runAllocation(commonParams);
+        break;
     }
+    
+    // Check for special status messages
+    if (result.message) {
+      if (result.message.includes("No eligible students")) {
+        toast.info("No eligible students found for allocation. All students may already be allocated.");
+      } else if (result.message.includes("No open internship")) {
+        toast.info("No open internship positions available. All positions are filled.");
+      } else if (result.match_count === 0) {
+        toast.info(`Matching process completed, but no matches were generated. Consider adjusting parameters.`);
+      } else {
+        toast.success(`Matching process complete! ${result.match_count || 0} matches generated using ${allocationMethod} method.`);
+      }
+    } else {
+      toast.success(`Matching process complete! ${result.match_count || 0} matches generated using ${allocationMethod} method.`);
+    }
+    
+    // Check if there are any match quality warnings
+    if (result.avg_score && result.avg_score < 0.3 && result.match_count > 0) {
+      toast.warning("Match quality is lower than expected. Consider adjusting matching parameters.");
+    }
+    
+    // Fetch the latest run data to update the UI
+    fetchMatchingRuns();
+    
+  } catch (error) {
+    console.error("Error executing matching process:", error);
+    
+    // Try to extract meaningful messages from the error
+    const errorMessage = error.toString();
+    if (errorMessage.includes("no eligible students")) {
+      toast.info("No eligible students found for allocation. All students may already be allocated.");
+    } else if (errorMessage.includes("no open capacity") || errorMessage.includes("no open internship")) {
+      toast.info("No open internship positions available. All positions are filled.");
+    } else {
+      toast.error("Failed to complete matching process. Please try again.");
+    }
+  } finally {
+    setIsConfigModalOpen(false);
+    setLoading(false);
   }
+}
 
   const fetchMatchingRuns = async () => {
     try {
@@ -265,6 +313,31 @@ export default function AdminDashboardPage() {
               </DialogHeader>
 
               <div className="space-y-6 py-4">
+                {/* Add allocation method selector */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="allocMethod">Allocation Method</Label>
+                  </div>
+                  <Select 
+                    value={allocationMethod}
+                    onValueChange={setAllocationMethod}
+                  >
+                    <SelectTrigger id="allocMethod" className="w-full">
+                      <SelectValue placeholder="Select allocation method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hungarian">Hungarian Algorithm</SelectItem>
+                      <SelectItem value="nlp">NLP GloVe Matching</SelectItem>
+                      <SelectItem value="ensemble">Ensemble Method</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {allocationMethod === "hungarian" && "Hungarian algorithm provides mathematically optimal matching."}
+                    {allocationMethod === "nlp" && "NLP GloVe uses semantic understanding of skills for better matching quality."}
+                    {allocationMethod === "ensemble" && "Ensemble combines traditional and NLP approaches for robust results."}
+                  </p>
+                </div>
+
                 {/* Skill Weight Multiplier */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -416,7 +489,7 @@ export default function AdminDashboardPage() {
                               variant="outline" 
                               size="sm" 
                               disabled={run.status !== "SUCCESS"}
-                              onClick={() => handleViewResults(run.rawId)} // Add this onClick handler
+                              onClick={() => handleViewResults(run.rawId)} 
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               Results

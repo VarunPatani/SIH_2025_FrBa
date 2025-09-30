@@ -5,10 +5,12 @@ from app.db import get_db
 from app.allocation import run_allocation
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
+import json
 
 router = APIRouter(prefix="/allocation", tags=["allocation"])
 
 class AllocationConfig(BaseModel):
+    emails: Optional[List[str]] = None  # Add this line
     skill_weight: float = 0.65
     location_weight: float = 0.20
     cgpa_weight: float = 0.15
@@ -18,42 +20,70 @@ class AllocationConfig(BaseModel):
 # Fix the allocation_config insertion:
 @router.post("/run", status_code=status.HTTP_200_OK)
 async def trigger_allocation(
-    config: AllocationConfig = AllocationConfig(),
+    request: AllocationConfig,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Trigger a new allocation run with optional configuration parameters
-    """
     try:
-        # Update allocation weights in database if needed
-        # Check if the allocation_config table exists
-        check_table = await db.execute(text("""
-            SELECT to_regclass('allocation_config') IS NOT NULL as exists
-        """))
-        table_exists = check_table.scalar_one()
-        
-        if table_exists:
-            await db.execute(text("""
-                INSERT INTO allocation_config (skill_weight, location_weight, cgpa_weight, updated_at)
-                VALUES (:sw, :lw, :cw, NOW())
-            """), {
-                "sw": config.skill_weight,
-                "lw": config.location_weight,
-                "cw": config.cgpa_weight
-            })
-            await db.commit()
-        
-        # Run allocation with the given parameters
         run_id = await run_allocation(
-            db=db, 
-            respect_existing=config.respect_existing,
-            scope_emails=config.scope_emails,
-            skill_weight=config.skill_weight,
-            location_weight=config.location_weight,
-            cgpa_weight=config.cgpa_weight
+            db=db,
+            scope_emails=request.emails,
+            respect_existing=request.respect_existing,
+            skill_weight=request.skill_weight,
+            location_weight=request.location_weight,
+            cgpa_weight=request.cgpa_weight
         )
         
-        # Get summary stats
+        # Check if this was an empty run
+        query = text("""
+            SELECT params_json, metrics_json FROM alloc_run WHERE run_id = :run_id
+        """)
+        result = await db.execute(query, {"run_id": run_id})
+        row = result.mappings().first()
+        
+        if row:
+            # Handle metrics_json - check if it's a string or dict
+            metrics = {}
+            if row["metrics_json"]:
+                if isinstance(row["metrics_json"], str):
+                    try:
+                        metrics = json.loads(row["metrics_json"])
+                    except:
+                        metrics = {}
+                else:
+                    metrics = row["metrics_json"]
+            
+            # Handle params_json - check if it's a string or dict
+            params = {}
+            if row["params_json"]:
+                if isinstance(row["params_json"], str):
+                    try:
+                        params = json.loads(row["params_json"])
+                    except:
+                        params = {}
+                else:
+                    params = row["params_json"]
+            
+            # Check for empty allocation note
+            if metrics and "note" in metrics:
+                if "no eligible students" in metrics["note"]:
+                    return {
+                        "run_id": run_id,
+                        "message": "No eligible students found for allocation",
+                        "match_count": 0,
+                        "students_matched": 0,
+                        "internships_matched": 0
+                    }
+                elif "no open capacity" in metrics["note"]:
+                    return {
+                        "run_id": run_id,
+                        "message": "No open internship positions available",
+                        "match_count": 0,
+                        "students_matched": 0,
+                        "internships_matched": 0
+                    }
+        
+        # Rest of function stays the same...
+        # Get summary stats for normal runs
         query = text("""
             SELECT 
                 COUNT(*) as match_count,
@@ -67,23 +97,38 @@ async def trigger_allocation(
         stats = result.mappings().first()
         
         return {
-            "success": True,
             "run_id": run_id,
+            "message": "Allocation completed successfully",
             "match_count": stats["match_count"] if stats else 0,
             "students_matched": stats["students_matched"] if stats else 0,
-            "internships_matched": stats["internships_matched"] if stats else 0,
-            "message": "Allocation run completed successfully"
+            "internships_matched": stats["internships_matched"] if stats else 0
         }
         
     except Exception as e:
-        # Add more detailed error logging
+        # Log the full error for debugging
         import traceback
-        error_details = traceback.format_exc()
         print(f"Allocation error: {str(e)}")
-        print(error_details)
+        print(traceback.format_exc())
         
-        await db.rollback()  # Ensure transaction is rolled back
-        
+        # Check if it's a specific known error
+        error_msg = str(e)
+        if "no eligible students" in error_msg.lower():
+            return {
+                "run_id": 0,
+                "message": "No eligible students found for allocation",
+                "match_count": 0,
+                "students_matched": 0,
+                "internships_matched": 0
+            }
+        elif "no open capacity" in error_msg.lower():
+            return {
+                "run_id": 0,
+                "message": "No open internship positions available",
+                "match_count": 0,
+                "students_matched": 0,
+                "internships_matched": 0
+            }
+            
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Allocation failed: {str(e)}"

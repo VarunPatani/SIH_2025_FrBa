@@ -242,3 +242,5 @@ Desktop.ini
 uploads/
 static/uploads/
 media/
+
+"backend/glove.6B.200d.txt" 

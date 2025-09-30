@@ -289,26 +289,35 @@ export async function toggleInternshipStatus(internshipId, isActive) {
 }
 
 // Update the runAllocation function
+// Add these modifications to your runAllocation function
 export async function runAllocation(config = {}) {
   try {
-    const r = await fetch(`${API}/allocation/run`, { 
+    const r = await fetch(`${API}/allocation/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config)
     });
     
-    if (!r.ok) {
-      const errorText = await r.text();
-      console.error("Allocation API error:", errorText);
-      throw new Error(errorText || "Failed to run allocation");
+    const data = await r.json();
+    
+    // Check for special messages
+    if (data.message && !r.ok) {
+      // This isn't a real error but a controlled response
+      return data;
     }
     
-    return r.json();
+    if (!r.ok) {
+      throw new Error(data.detail || "Failed to run allocation");
+    }
+    
+    return data;
   } catch (error) {
     console.error("Allocation error:", error);
     throw error;
   }
 }
+
+// Similarly for the other allocation functions
 
 // Get the latest allocation run
 export async function latestRun() {
@@ -342,6 +351,54 @@ export async function getAllocationRuns(limit = 20, offset = 0) {
   if (!r.ok) throw new Error("Failed to fetch allocation runs");
   return r.json();
 }
+
+// Add these new functions after your existing runAllocation function
+
+// Run NLP-based allocation
+export async function runNlpAllocation(config = {}) {
+  try {
+    const r = await fetch(`${API}/allocation/nlp/run`, { 
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config)
+    });
+    
+    if (!r.ok) {
+      const errorText = await r.text();
+      console.error("NLP Allocation API error:", errorText);
+      throw new Error(errorText || "Failed to run NLP allocation");
+    }
+    
+    return r.json();
+  } catch (error) {
+    console.error("NLP Allocation error:", error);
+    throw error;
+  }
+}
+
+// Run Ensemble allocation
+export async function runEnsembleAllocation(config = {}) {
+  try {
+    const r = await fetch(`${API}/allocation/ensemble/run`, { 
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config)
+    });
+    
+    if (!r.ok) {
+      const errorText = await r.text();
+      console.error("Ensemble Allocation API error:", errorText);
+      throw new Error(errorText || "Failed to run ensemble allocation");
+    }
+    
+    return r.json();
+  } catch (error) {
+    console.error("Ensemble Allocation error:", error);
+    throw error;
+  }
+}
+
+
 
 // ...existing code...
 // export async function uploadStudentsCsv(file, { autoAllocate = true, mode = "upsert" } = {}) {

@@ -133,7 +133,7 @@ async def run_allocation(
                 text("""
             INSERT INTO alloc_run (status, params_json, metrics_json)
             VALUES ('SUCCESS',
-                    JSON_OBJECT('respect_existing', :re, 'scoped', 1, 'note','empty scope', 'algorithm', 'hungarian'),
+                    json_build_object('respect_existing', :re, 'scoped', 1, 'note','empty scope', 'algorithm', 'hungarian'),
                     NULL)
         """),
                 {"re": 1 if respect_existing else 0},
@@ -162,8 +162,8 @@ async def run_allocation(
                 text("""
             INSERT INTO alloc_run (status, params_json, metrics_json)
             VALUES ('SUCCESS',
-                    JSON_OBJECT('respect_existing', :re, 'scoped', :sc, 'algorithm', 'hungarian'),
-                    JSON_OBJECT('note','no eligible students in scope'))
+                    json_build_object('respect_existing', :re, 'scoped', :sc, 'algorithm', 'hungarian'),
+                    json_build_object('note','no eligible students in scope'))
         """),
                 {
                     "re": 1 if respect_existing else 0,
@@ -182,8 +182,8 @@ async def run_allocation(
                 text("""
             INSERT INTO alloc_run (status, params_json, metrics_json)
             VALUES ('SUCCESS',
-                    JSON_OBJECT('respect_existing', :re, 'scoped', :sc, 'algorithm', 'hungarian'),
-                    JSON_OBJECT('note','no open capacity'))
+                    json_build_object('respect_existing', :re, 'scoped', :sc, 'algorithm', 'hungarian'),
+                    json_build_object('note','no open capacity'))
         """),
                 {
                     "re": 1 if respect_existing else 0,
