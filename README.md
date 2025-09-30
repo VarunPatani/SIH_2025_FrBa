@@ -217,13 +217,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👥 Team
 
-- **Team Name**: [Your Team Name]
-- **SIH 2025 Problem Statement**: [PS Number and Title]
+- **Team Name**: MisFit_999
+- **SIH 2025 Problem Statement**: Smart Allocation for PM Internship Scheme
 
 ## 📞 Support
 
 For support and queries, please contact:
-- Email: your-email@example.com
+- Email: dhruv.pithadia49@nmims.in
 - GitHub Issues: [Create an issue](https://github.com/VarunPatani/SIH_2025_FB/issues)
 
 ---
